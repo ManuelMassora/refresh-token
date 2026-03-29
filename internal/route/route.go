@@ -2,12 +2,18 @@ package route
 
 import (
 	"refresh-token/internal/handler"
+	"refresh-token/internal/middlewares"
+	"refresh-token/internal/token"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func RegisterRoutes(authHandler *handler.AuthHandler, userHandler *handler.UserHandler, itemHandler *handler.ItemHandler) *chi.Mux {
+func RegisterRoutes(
+	authHandler *handler.AuthHandler,
+	userHandler *handler.UserHandler,
+	itemHandler *handler.ItemHandler,
+	jwt *token.JWTMarker) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Logger)
@@ -25,6 +31,7 @@ func RegisterRoutes(authHandler *handler.AuthHandler, userHandler *handler.UserH
 	})
 
 	r.Route("/items", func(r chi.Router) {
+		r.Use(middlewares.Auth(jwt))
 		r.Post("/", itemHandler.CreateItem)
 		r.Get("/", itemHandler.GetAllItems)
 		r.Get("/{id}", itemHandler.GetItem)

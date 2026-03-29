@@ -46,13 +46,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	acessToken, accessClaims, err := h.tokenMarker.CreateToken(int64(user.ID), user.Username, user.IsAdmin, 15 * time.Minute)
+	acessToken, accessClaims, err := h.tokenMarker.CreateToken(int64(user.ID), user.Username, user.IsAdmin, 2 * time.Minute)
 	if err != nil {
 		http.Error(w, "Error creating token", http.StatusInternalServerError)
 		return
 	}
 
-	refreshToken, refreshClaims, err := h.tokenMarker.CreateToken(int64(user.ID), user.Username, user.IsAdmin, 24 * time.Hour)
+	refreshToken, refreshClaims, err := h.tokenMarker.CreateToken(int64(user.ID), user.Username, user.IsAdmin, 6 * time.Minute)
 	if err != nil {
 		http.Error(w, "Error creating refresh token", http.StatusInternalServerError)
 		return
@@ -133,7 +133,7 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	acessToken, acessClaims, err := h.tokenMarker.CreateToken(refreshClaims.ID, refreshClaims.Username, refreshClaims.IsAdmin, 15*time.Minute)
+	acessToken, acessClaims, err := h.tokenMarker.CreateToken(refreshClaims.ID, refreshClaims.Username, refreshClaims.IsAdmin, 2*time.Minute)
 	if err != nil {
 		http.Error(w, "Error creating access token", http.StatusInternalServerError)
 		return

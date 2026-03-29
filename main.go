@@ -33,7 +33,7 @@ func main() {
 	authHandler := handler.NewAuthHandler(userRepo, sessionRepo, tokenMarker)
 	userHandler := handler.NewUserHandler(userRepo)
 	itemHandler := handler.NewItemHandler(itemRepo)
-	r := route.RegisterRoutes(authHandler, userHandler, itemHandler)
+	r := route.RegisterRoutes(authHandler, userHandler, itemHandler, tokenMarker)
 	log.Printf("Servidor rodando na porta %s", cfg.SERVER_PORT)
 	if err := http.ListenAndServe(":"+cfg.SERVER_PORT, r); err != nil {
 		log.Fatalf("Erro ao iniciar o servidor: %v", err)
