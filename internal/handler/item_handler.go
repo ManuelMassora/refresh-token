@@ -9,24 +9,32 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 )
 
 type ItemHandler struct {
-	ctx  context.Context
-	repo *repo.ItemRepo
+	ctx       context.Context
+	repo      *repo.ItemRepo
+	validator *validator.Validate
 }
 
-func NewItemHandler(repo *repo.ItemRepo) *ItemHandler {
+func NewItemHandler(repo *repo.ItemRepo, v *validator.Validate) *ItemHandler {
 	return &ItemHandler{
-		ctx:  context.Background(),
-		repo: repo,
+		ctx:       context.Background(),
+		repo:      repo,
+		validator: v,
 	}
 }
 
 func (h *ItemHandler) CreateItem(w http.ResponseWriter, r *http.Request) {
 	var req ItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.validator.Struct(req); err != nil {
+		http.Error(w, "Validation failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -85,7 +93,12 @@ func (h *ItemHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 
 	var req ItemUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.validator.Struct(req); err != nil {
+		http.Error(w, "Validation failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 

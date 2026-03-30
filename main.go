@@ -5,10 +5,8 @@ import (
 	"net/http"
 	"refresh-token/internal/config"
 	"refresh-token/internal/db"
-	"refresh-token/internal/handler"
-	"refresh-token/internal/repo"
+	"refresh-token/internal/di"
 	"refresh-token/internal/route"
-	"refresh-token/internal/token"
 )
 
 func main() {
@@ -24,16 +22,9 @@ func main() {
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
 
-	userRepo := repo.NewUserRepo(db)
-	itemRepo := repo.NewItemRepo(db)
-	sessionRepo := repo.NewSessionRepo(db)
+	container := di.NewContainer(db, cfg)
 
-	tokenMarker := token.NewJWTMarker(cfg.JWT_SECRET)
-
-	authHandler := handler.NewAuthHandler(userRepo, sessionRepo, tokenMarker)
-	userHandler := handler.NewUserHandler(userRepo)
-	itemHandler := handler.NewItemHandler(itemRepo)
-	r := route.RegisterRoutes(authHandler, userHandler, itemHandler, tokenMarker)
+	r := route.RegisterRoutes(container)
 	log.Printf("Servidor rodando na porta %s", cfg.SERVER_PORT)
 	if err := http.ListenAndServe(":"+cfg.SERVER_PORT, r); err != nil {
 		log.Fatalf("Erro ao iniciar o servidor: %v", err)

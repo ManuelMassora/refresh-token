@@ -10,24 +10,32 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 )
 
 type UserHandler struct {
-	repo *repo.UserRepo
-	ctx context.Context
+	repo      *repo.UserRepo
+	ctx       context.Context
+	validator *validator.Validate
 }
 
-func NewUserHandler(repo *repo.UserRepo) *UserHandler {
+func NewUserHandler(repo *repo.UserRepo, v *validator.Validate) *UserHandler {
 	return &UserHandler{
-		ctx: context.Background(),
-		repo: repo,
+		ctx:       context.Background(),
+		repo:      repo,
+		validator: v,
 	}
 }
 
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req UserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.validator.Struct(req); err != nil {
+		http.Error(w, "Validation failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -88,7 +96,12 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	var req UserUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.validator.Struct(req); err != nil {
+		http.Error(w, "Validation failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	user, err := h.repo.GetUserByID(h.ctx, int(uid))
