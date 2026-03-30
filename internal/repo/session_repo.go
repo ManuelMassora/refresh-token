@@ -15,8 +15,8 @@ func NewSessionRepo(db *gorm.DB) *SessionRepo {
 	return &SessionRepo{db: db}
 }
 
-func (r *SessionRepo) CreateSession(ctx context.Context, session *model.Session) (*model.Session,error) {
-	err := r.db.Create(session).Error
+func (r *SessionRepo) CreateSession(ctx context.Context, session *model.Session) (*model.Session, error) {
+	err := r.db.WithContext(ctx).Create(session).Error
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +25,7 @@ func (r *SessionRepo) CreateSession(ctx context.Context, session *model.Session)
 
 func (r *SessionRepo) GetSessionByID(ctx context.Context, id string) (*model.Session, error) {
 	var session model.Session
-	err := r.db.Where("session_id=?", id).First(&session).Error
+	err := r.db.WithContext(ctx).Where("session_id=?", id).First(&session).Error
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (r *SessionRepo) GetSessionByID(ctx context.Context, id string) (*model.Ses
 
 func (r *SessionRepo) GetSessionByUserID(ctx context.Context, id string) (*model.Session, error) {
 	var session model.Session
-	err := r.db.Where("user_id=?", id).First(&session).Error
+	err := r.db.WithContext(ctx).Where("user_id=?", id).First(&session).Error
 	if err != nil {
 		return nil, err
 	}
@@ -42,13 +42,13 @@ func (r *SessionRepo) GetSessionByUserID(ctx context.Context, id string) (*model
 }
 
 func (r *SessionRepo) RevokeSession(ctx context.Context, id string) error {
-	return r.db.Model(&model.Session{}).Where("session_id = ?", id).Update("is_revoked", true).Error
+	return r.db.WithContext(ctx).Model(&model.Session{}).Where("session_id = ?", id).Update("is_revoked", true).Error
 }
 
 func (r *SessionRepo) RevokeAllSessionForUser(ctx context.Context, userID int) error {
-	return r.db.Model(&model.Session{}).Where("user_id = ?", userID).Update("is_revoked", true).Error
+	return r.db.WithContext(ctx).Model(&model.Session{}).Where("user_id = ?", userID).Update("is_revoked", true).Error
 }
 
 func (r *SessionRepo) DeleteSession(ctx context.Context, id string) error {
-	return r.db.Delete(&model.Session{}, "session_id = ?", id).Error
+	return r.db.WithContext(ctx).Delete(&model.Session{}, "session_id = ?", id).Error
 }

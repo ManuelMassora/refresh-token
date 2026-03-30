@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"refresh-token/internal/model"
@@ -13,14 +12,12 @@ import (
 )
 
 type ItemHandler struct {
-	ctx       context.Context
 	repo      *repo.ItemRepo
 	validator *validator.Validate
 }
 
 func NewItemHandler(repo *repo.ItemRepo, v *validator.Validate) *ItemHandler {
 	return &ItemHandler{
-		ctx:       context.Background(),
 		repo:      repo,
 		validator: v,
 	}
@@ -44,7 +41,7 @@ func (h *ItemHandler) CreateItem(w http.ResponseWriter, r *http.Request) {
 		Price:       req.Price,
 	}
 
-	createdItem, err := h.repo.CreateItem(h.ctx, &item)
+	createdItem, err := h.repo.CreateItem(r.Context(), &item)
 	if err != nil {
 		http.Error(w, "Error creating item", http.StatusInternalServerError)
 		return
@@ -63,7 +60,7 @@ func (h *ItemHandler) GetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.repo.GetItemByID(h.ctx, int(uid))
+	item, err := h.repo.GetItemByID(r.Context(), int(uid))
 	if err != nil {
 		http.Error(w, "Item not found", http.StatusNotFound)
 		return
@@ -73,7 +70,7 @@ func (h *ItemHandler) GetItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ItemHandler) GetAllItems(w http.ResponseWriter, r *http.Request) {
-	items, err := h.repo.GetAllItems(h.ctx)
+	items, err := h.repo.GetAllItems(r.Context())
 	if err != nil {
 		http.Error(w, "Error fetching items", http.StatusInternalServerError)
 		return
@@ -102,7 +99,7 @@ func (h *ItemHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.repo.GetItemByID(h.ctx, int(uid))
+	item, err := h.repo.GetItemByID(r.Context(), int(uid))
 	if err != nil {
 		http.Error(w, "Item not found", http.StatusNotFound)
 		return
@@ -112,7 +109,7 @@ func (h *ItemHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	item.Description = req.Description
 	item.Price = req.Price
 
-	if err := h.repo.UpdateItem(h.ctx, item); err != nil {
+	if err := h.repo.UpdateItem(r.Context(), item); err != nil {
 		http.Error(w, "Error updating item", http.StatusInternalServerError)
 		return
 	}
@@ -129,13 +126,13 @@ func (h *ItemHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.repo.GetItemByID(h.ctx, int(uid))
+	_, err = h.repo.GetItemByID(r.Context(), int(uid))
 	if err != nil {
 		http.Error(w, "Item not found", http.StatusNotFound)
 		return
 	}
 
-	if err := h.repo.DeleteItem(h.ctx, int(uid)); err != nil {
+	if err := h.repo.DeleteItem(r.Context(), int(uid)); err != nil {
 		http.Error(w, "Error deleting item", http.StatusInternalServerError)
 		return
 	}

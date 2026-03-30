@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"refresh-token/internal/model"
@@ -15,13 +14,11 @@ import (
 
 type UserHandler struct {
 	repo      *repo.UserRepo
-	ctx       context.Context
 	validator *validator.Validate
 }
 
 func NewUserHandler(repo *repo.UserRepo, v *validator.Validate) *UserHandler {
 	return &UserHandler{
-		ctx:       context.Background(),
 		repo:      repo,
 		validator: v,
 	}
@@ -49,7 +46,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	user.Password = hashedPassword
 
-	createdUser, err := h.repo.CreateUser(h.ctx, &user)
+	createdUser, err := h.repo.CreateUser(r.Context(), &user)
 	if err != nil {
 		http.Error(w, "Error creating user", http.StatusInternalServerError)
 		return
@@ -71,7 +68,7 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid user ID", http.StatusBadRequest)
 		return
 	}
-	user, err := h.repo.GetUserByID(h.ctx, int(uid))
+	user, err := h.repo.GetUserByID(r.Context(), int(uid))
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
@@ -104,13 +101,13 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Validation failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	user, err := h.repo.GetUserByID(h.ctx, int(uid))
+	user, err := h.repo.GetUserByID(r.Context(), int(uid))
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 	user.Username = req.Username
-	err = h.repo.UpdateUser(h.ctx, user)
+	err = h.repo.UpdateUser(r.Context(), user)
 	if err != nil {
 		http.Error(w, "Error updating user", http.StatusInternalServerError)
 		return
@@ -130,12 +127,12 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid user ID", http.StatusBadRequest)
 		return
 	}
-	_, err = h.repo.GetUserByID(h.ctx, int(uid))
+	_, err = h.repo.GetUserByID(r.Context(), int(uid))
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
-	err = h.repo.DeleteUser(h.ctx, int(uid))
+	err = h.repo.DeleteUser(r.Context(), int(uid))
 	if err != nil {
 		http.Error(w, "Error deleting user", http.StatusInternalServerError)
 		return
@@ -145,7 +142,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) GetAllUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.repo.GetAllUsers(h.ctx)
+	users, err := h.repo.GetAllUsers(r.Context())
 	if err != nil {
 		http.Error(w, "Error fetching users", http.StatusInternalServerError)
 		return

@@ -3,6 +3,7 @@ package route
 import (
 	"refresh-token/internal/di"
 	"refresh-token/internal/middlewares"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -13,6 +14,7 @@ func RegisterRoutes(container *di.Container) *chi.Mux {
 
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Timeout(3 *time.Second))
 
 	r.Post("/login", container.AuthHandler.Login)
 

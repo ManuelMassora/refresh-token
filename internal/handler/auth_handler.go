@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"refresh-token/internal/auth"
@@ -18,7 +17,6 @@ type AuthHandler struct {
 	repo        *repo.UserRepo
 	repoSession *repo.SessionRepo
 	tokenMarker *auth.JWTMarker
-	ctx         context.Context
 	validator   *validator.Validate
 }
 	
@@ -27,7 +25,6 @@ func NewAuthHandler(repo *repo.UserRepo, repoSession *repo.SessionRepo, tokenMar
 		repo:        repo,
 		repoSession: repoSession,
 		tokenMarker: tokenMarker,
-		ctx:         context.Background(),
 		validator:   v,
 	}
 }
@@ -44,7 +41,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.repo.GetUserByUsername(h.ctx, req.Username)
+	user, err := h.repo.GetUserByUsername(r.Context(), req.Username)
 	if err != nil {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
@@ -66,7 +63,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.repoSession.CreateSession(h.ctx, &model.Session{
+	session, err := h.repoSession.CreateSession(r.Context(), &model.Session{
 		SessionID: refreshClaims.RegisteredClaims.ID,
 		UserID: user.ID,
 		Username: refreshClaims.Username,
@@ -99,7 +96,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.repoSession.GetSessionByID(h.ctx, id)
+	session, err := h.repoSession.GetSessionByID(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Session not found", http.StatusUnauthorized)
 		return
@@ -110,7 +107,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.repoSession.DeleteSession(h.ctx, id)
+	err = h.repoSession.DeleteSession(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Error deleting session", http.StatusInternalServerError)
 		return
@@ -194,14 +191,14 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.repoSession.GetSessionByID(h.ctx, refreshClaims.RegisteredClaims.ID)
+	session, err := h.repoSession.GetSessionByID(r.Context(), refreshClaims.RegisteredClaims.ID)
 	if err != nil {
 		http.Error(w, "Session not found", http.StatusUnauthorized)
 		return
 	}
 
 	if session.IsRevoked {
-		err = h.repoSession.RevokeAllSessionForUser(h.ctx, session.UserID)
+		err = h.repoSession.RevokeAllSessionForUser(r.Context(), session.UserID)
 		if err != nil {
 			http.Error(w, "Error revoking session", http.StatusInternalServerError)
 			return
@@ -232,7 +229,7 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.repoSession.CreateSession(h.ctx, &model.Session{
+	_, err = h.repoSession.CreateSession(r.Context(), &model.Session{
 		SessionID:    newRefreshClaims.RegisteredClaims.ID,
 		UserID:       session.UserID,
 		Username:     newRefreshClaims.Username,
@@ -246,7 +243,7 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.repoSession.RevokeSession(h.ctx, session.SessionID)
+	err = h.repoSession.RevokeSession(r.Context(), session.SessionID)
 	if err != nil {
 		http.Error(w, "Error revoking old session", http.StatusInternalServerError)
 		return
@@ -264,7 +261,7 @@ func (h *AuthHandler) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.repoSession.RevokeSession(h.ctx, id)
+	err := h.repoSession.RevokeSession(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Error revoking session", http.StatusInternalServerError)
 		return
