@@ -4,5 +4,6 @@ type User struct {
 	ID       int    `json:"id"`
 	Username string `json:"username"`
 	Password string `json:"password"`
-	IsAdmin  bool   `json:"is_admin"`
+	Role     Role   `json:"role" gorm:"foreignKey:RoleID"`
+	RoleID   int64  `json:"role_id"`
 }

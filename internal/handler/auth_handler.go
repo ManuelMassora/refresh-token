@@ -2,8 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"refresh-token/internal/auth"
+	"refresh-token/internal/infra/redis"
 	"refresh-token/internal/model"
 	"refresh-token/internal/repo"
 	"refresh-token/internal/util"
@@ -46,18 +48,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
-	if err != util.CheckPasswordHash(req.Password, user.Password) {
+	if err := util.CheckPasswordHash(req.Password, user.Password); err != nil {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
 
-	acessToken, accessClaims, err := h.tokenMarker.CreateToken(int64(user.ID), user.Username, user.IsAdmin, 2 * time.Minute)
+	acessToken, accessClaims, err := h.tokenMarker.CreateToken(int64(user.ID), user.Username, user.Role.Name, 5 * time.Minute)
 	if err != nil {
 		http.Error(w, "Error creating token", http.StatusInternalServerError)
 		return
 	}
 
-	refreshToken, refreshClaims, err := h.tokenMarker.CreateToken(int64(user.ID), user.Username, user.IsAdmin, 6 * time.Minute)
+	refreshToken, refreshClaims, err := h.tokenMarker.CreateToken(int64(user.ID), user.Username, user.Role.Name,  7*24*time.Hour)
 	if err != nil {
 		http.Error(w, "Error creating refresh token", http.StatusInternalServerError)
 		return
@@ -76,6 +78,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	err = redis.RedisClient.Set(r.Context(), fmt.Sprintf("user:role:%d", user.ID), user.Role.Name, 5*time.Minute).Err()
+	if err != nil {
+		http.Error(w, "Error storing user role in Redis", http.StatusInternalServerError)
+		return
+	}
+
 	h.setTokenCookies(w, session.SessionID, acessToken, refreshToken, accessClaims.RegisteredClaims.ExpiresAt.Time, refreshClaims.RegisteredClaims.ExpiresAt.Time)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -90,7 +98,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	id := cookie.Value
 
-	userID, ok := r.Context().Value("user_id").(int64)
+	userID, ok := r.Context().Value(auth.UserIDKey).(int64)
 	if !ok {
 		http.Error(w, "User ID não encontrado no contexto", http.StatusUnauthorized)
 		return
@@ -112,6 +120,9 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error deleting session", http.StatusInternalServerError)
 		return
 	}
+
+	// Remove role from Redis on logout
+	redis.RedisClient.Del(r.Context(), fmt.Sprintf("user:role:%d", userID))
 
 	h.clearTokenCookies(w)
 	w.WriteHeader(http.StatusNoContent)
@@ -217,13 +228,13 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, accessClaims, err := h.tokenMarker.CreateToken(refreshClaims.ID, refreshClaims.Username, refreshClaims.IsAdmin, 2*time.Minute)
+	accessToken, accessClaims, err := h.tokenMarker.CreateToken(refreshClaims.ID, refreshClaims.Username, refreshClaims.Role, 5*time.Minute)
 	if err != nil {
 		http.Error(w, "Error creating access token", http.StatusInternalServerError)
 		return
 	}
 
-	newRefreshToken, newRefreshClaims, err := h.tokenMarker.CreateToken(refreshClaims.ID, refreshClaims.Username, refreshClaims.IsAdmin, 6*time.Minute)
+	newRefreshToken, newRefreshClaims, err := h.tokenMarker.CreateToken(refreshClaims.ID, refreshClaims.Username, refreshClaims.Role, 7*24*time.Hour)
 	if err != nil {
 		http.Error(w, "Error creating refresh token", http.StatusInternalServerError)
 		return
@@ -246,6 +257,13 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 	err = h.repoSession.RevokeSession(r.Context(), session.SessionID)
 	if err != nil {
 		http.Error(w, "Error revoking old session", http.StatusInternalServerError)
+		return
+	}
+
+	// Store role in Redis for role checks (refreshing TTL to 15 mins)
+	err = redis.RedisClient.Set(r.Context(), fmt.Sprintf("user:role:%d", refreshClaims.ID), refreshClaims.Role, 5*time.Minute).Err()
+	if err != nil {
+		http.Error(w, "Error updating user role in Redis", http.StatusInternalServerError)
 		return
 	}
 

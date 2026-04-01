@@ -2,39 +2,60 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	goredis "github.com/redis/go-redis/v9"
+	"refresh-token/internal/infra/redis"
 	"refresh-token/internal/model"
-
-	"gorm.io/gorm"
+	"time"
 )
 
 type SessionRepo struct {
-	db *gorm.DB
 }
 
-func NewSessionRepo(db *gorm.DB) *SessionRepo {
-	return &SessionRepo{db: db}
+func NewSessionRepo() *SessionRepo {
+	return &SessionRepo{}
 }
 
 func (r *SessionRepo) CreateSession(ctx context.Context, session *model.Session) (*model.Session, error) {
-	err := r.db.WithContext(ctx).Create(session).Error
+	session.CreatedAt = time.Now()
+	data, err := json.Marshal(session)
 	if err != nil {
 		return nil, err
 	}
+
+	ttl := time.Until(session.ExpiresAt)
+	if ttl <= 0 {
+		return session, nil
+	}
+
+	sessionKey := fmt.Sprintf("session:%s", session.SessionID)
+	userSetKey := fmt.Sprintf("user_sessions:%d", session.UserID)
+
+	// Execute commands in a transaction (MULTI/EXEC)
+	_, err = redis.RedisClient.TxPipelined(ctx, func(pipe goredis.Pipeliner) error {
+		pipe.Set(ctx, sessionKey, data, ttl)
+		pipe.SAdd(ctx, userSetKey, session.SessionID)
+		pipe.Expire(ctx, userSetKey, 7*24*time.Hour)
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to save session in redis transaction: %w", err)
+	}
+
 	return session, nil
 }
 
 func (r *SessionRepo) GetSessionByID(ctx context.Context, id string) (*model.Session, error) {
-	var session model.Session
-	err := r.db.WithContext(ctx).Where("session_id=?", id).First(&session).Error
+	key := fmt.Sprintf("session:%s", id)
+	val, err := redis.RedisClient.Get(ctx, key).Result()
 	if err != nil {
 		return nil, err
 	}
-	return &session, nil
-}
 
-func (r *SessionRepo) GetSessionByUserID(ctx context.Context, id string) (*model.Session, error) {
 	var session model.Session
-	err := r.db.WithContext(ctx).Where("user_id=?", id).First(&session).Error
+	err = json.Unmarshal([]byte(val), &session)
 	if err != nil {
 		return nil, err
 	}
@@ -42,13 +63,50 @@ func (r *SessionRepo) GetSessionByUserID(ctx context.Context, id string) (*model
 }
 
 func (r *SessionRepo) RevokeSession(ctx context.Context, id string) error {
-	return r.db.WithContext(ctx).Model(&model.Session{}).Where("session_id = ?", id).Update("is_revoked", true).Error
+	session, err := r.GetSessionByID(ctx, id)
+	if err != nil {
+		if err == goredis.Nil {
+			return nil
+		}
+		return err
+	}
+
+	sessionKey := fmt.Sprintf("session:%s", id)
+	userSetKey := fmt.Sprintf("user_sessions:%d", session.UserID)
+
+	// Execute deletion in a transaction
+	_, err = redis.RedisClient.TxPipelined(ctx, func(pipe goredis.Pipeliner) error {
+		pipe.Del(ctx, sessionKey)
+		pipe.SRem(ctx, userSetKey, id)
+		return nil
+	})
+
+	return err
 }
 
 func (r *SessionRepo) RevokeAllSessionForUser(ctx context.Context, userID int) error {
-	return r.db.WithContext(ctx).Model(&model.Session{}).Where("user_id = ?", userID).Update("is_revoked", true).Error
+	userSetKey := fmt.Sprintf("user_sessions:%d", userID)
+	sessionIDs, err := redis.RedisClient.SMembers(ctx, userSetKey).Result()
+	if err != nil {
+		return err
+	}
+
+	if len(sessionIDs) == 0 {
+		return nil
+	}
+
+	// Delete each individual session and the tracking set in a transaction
+	_, err = redis.RedisClient.TxPipelined(ctx, func(pipe goredis.Pipeliner) error {
+		for _, id := range sessionIDs {
+			pipe.Del(ctx, fmt.Sprintf("session:%s", id))
+		}
+		pipe.Del(ctx, userSetKey)
+		return nil
+	})
+
+	return err
 }
 
 func (r *SessionRepo) DeleteSession(ctx context.Context, id string) error {
-	return r.db.WithContext(ctx).Delete(&model.Session{}, "session_id = ?", id).Error
+	return r.RevokeSession(ctx, id)
 }

@@ -38,13 +38,13 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	var user model.User
 	user.Username = req.Username
-	user.IsAdmin = req.IsAdmin
 	hashedPassword, err := util.HashPassword(req.Password)
 	if err != nil {
 		http.Error(w, "Error hashing password", http.StatusInternalServerError)
 		return
 	}
 	user.Password = hashedPassword
+	user.RoleID = 2
 
 	createdUser, err := h.repo.CreateUser(r.Context(), &user)
 	if err != nil {
@@ -56,7 +56,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(UserResponse{
 		ID: createdUser.ID,
 		Username: createdUser.Username,
-		IsAdmin: createdUser.IsAdmin,
+		Role: createdUser.Role.Name,
 	})
 }
 
@@ -77,7 +77,7 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(UserResponse{
 		ID: user.ID,
 		Username: user.Username,
-		IsAdmin: user.IsAdmin,
+		Role: user.Role.Name,
 	})
 
 }
@@ -115,7 +115,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(UserResponse{
 		ID: user.ID,
 		Username: user.Username,
-		IsAdmin: user.IsAdmin,
+		Role: user.Role.Name,
 	})
 }
 
@@ -153,7 +153,7 @@ func (h *UserHandler) GetAllUsers(w http.ResponseWriter, r *http.Request) {
 		userResponses = append(userResponses, UserResponse{
 			ID: user.ID,
 			Username: user.Username,
-			IsAdmin: user.IsAdmin,
+			Role: user.Role.Name,
 		})
 	}
 	json.NewEncoder(w).Encode(userResponses)

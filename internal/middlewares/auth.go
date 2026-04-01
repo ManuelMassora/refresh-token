@@ -24,9 +24,7 @@ func Auth(jwtMarker *auth.JWTMarker) func(http.Handler) http.Handler {
 				return
 			}
 
-            ctx := context.WithValue(r.Context(), "user_id", claim.ID)
-			ctx = context.WithValue(ctx, "username", claim.Username)
-            ctx = context.WithValue(ctx, "is_admin", claim.IsAdmin)
+            ctx := context.WithValue(r.Context(), auth.UserIDKey, claim.ID)
             next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

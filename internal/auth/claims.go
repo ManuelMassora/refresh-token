@@ -8,14 +8,20 @@ import (
 	"github.com/google/uuid"
 )
 
+type ContextKey string
+
+const (
+	UserIDKey ContextKey = "user_id"
+)
+
 type UserClaims struct {
 	ID       int64  `json:"id"`
 	Username string `json:"username"`
-	IsAdmin  bool   `json:"is_admin"`
+	Role  		string   `json:"role"`
 	jwt.RegisteredClaims
 }
 
-func NewUserClaims(id int64, username string, isAdmin bool, duration time.Duration) (*UserClaims, error) {
+func NewUserClaims(id int64, username string, role string, duration time.Duration) (*UserClaims, error) {
 	tokenID, err := uuid.NewRandom()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token ID: %w", err)
@@ -23,7 +29,7 @@ func NewUserClaims(id int64, username string, isAdmin bool, duration time.Durati
 	return &UserClaims{
 		ID:       id,
 		Username: username,
-		IsAdmin:  isAdmin,
+		Role: role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID: tokenID.String(),
 			Subject: username,

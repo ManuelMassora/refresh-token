@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httprate"
 )
 
 func RegisterRoutes(container *di.Container) *chi.Mux {
@@ -15,6 +16,7 @@ func RegisterRoutes(container *di.Container) *chi.Mux {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(3 *time.Second))
+	r.Use(httprate.LimitByIP(10, time.Minute))
 
 	r.Post("/login", container.AuthHandler.Login)
 
@@ -33,11 +35,14 @@ func RegisterRoutes(container *di.Container) *chi.Mux {
 
 	r.Route("/items", func(r chi.Router) {
 		r.Use(middlewares.Auth(container.JWTMarker))
-		r.Post("/", container.ItemHandler.CreateItem)
+		r.Group(func(r chi.Router) {
+			r.Use(middlewares.HasAnyRole("ADMIN"))
+			r.Post("/", container.ItemHandler.CreateItem)
+			r.Put("/{id}", container.ItemHandler.UpdateItem)
+			r.Delete("/{id}", container.ItemHandler.DeleteItem)
+		})
 		r.Get("/", container.ItemHandler.GetAllItems)
 		r.Get("/{id}", container.ItemHandler.GetItem)
-		r.Put("/{id}", container.ItemHandler.UpdateItem)
-		r.Delete("/{id}", container.ItemHandler.DeleteItem)
 	})
 
 	r.Route("/tokens", func(r chi.Router) {

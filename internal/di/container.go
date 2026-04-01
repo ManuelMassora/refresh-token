@@ -27,7 +27,7 @@ func NewContainer(db *gorm.DB, cfg *config.Config) *Container {
 
 	userRepo := repo.NewUserRepo(db)
 	itemRepo := repo.NewItemRepo(db)
-	sessionRepo := repo.NewSessionRepo(db)
+	sessionRepo := repo.NewSessionRepo()
 
 	jwtMarker := auth.NewJWTMarker(cfg.JWT_SECRET)
 

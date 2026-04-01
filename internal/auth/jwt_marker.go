@@ -15,8 +15,8 @@ func NewJWTMarker(secretKey string) *JWTMarker {
 	return &JWTMarker{secretKey: secretKey}
 }
 
-func (marker *JWTMarker) CreateToken(id int64, username string, isAdmin bool, duration time.Duration) (string, *UserClaims, error) {
-	claims, err := NewUserClaims(id, username, isAdmin, duration)
+func (marker *JWTMarker) CreateToken(id int64, username string, role string, duration time.Duration) (string, *UserClaims, error) {
+	claims, err := NewUserClaims(id, username, role, duration)
 	if err != nil {
 		return "", nil, err
 	}

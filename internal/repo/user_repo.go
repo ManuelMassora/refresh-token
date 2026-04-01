@@ -16,7 +16,7 @@ func NewUserRepo(db *gorm.DB) *UserRepo {
 }
 
 func (r *UserRepo) CreateUser(ctx context.Context, user *model.User) (*model.User, error) {
-	err := r.db.WithContext(ctx).Create(user).Error
+	err := r.db.WithContext(ctx).Preload("Role").Create(user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +25,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, user *model.User) (*model.Use
 
 func (r *UserRepo) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
 	var user model.User
-	err := r.db.WithContext(ctx).Where("username = ?", username).First(&user).Error
+	err := r.db.WithContext(ctx).Preload("Role").Where("username = ?", username).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (r *UserRepo) GetUserByUsername(ctx context.Context, username string) (*mod
 
 func (r *UserRepo) GetUserByID(ctx context.Context, id int) (*model.User, error) {
 	var user model.User
-	err := r.db.WithContext(ctx).First(&user, id).Error
+	err := r.db.WithContext(ctx).Preload("Role").First(&user, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (r *UserRepo) DeleteUser(ctx context.Context, id int) error {
 
 func (r *UserRepo) GetAllUsers(ctx context.Context) ([]model.User, error) {
 	var users []model.User
-	err := r.db.WithContext(ctx).Find(&users).Error
+	err := r.db.WithContext(ctx).Preload("Role").Find(&users).Error
 	if err != nil {
 		return nil, err
 	}

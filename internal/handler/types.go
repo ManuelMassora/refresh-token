@@ -31,13 +31,12 @@ type RenewTokenResponse struct {
 type UserResponse struct {
 	ID 			int		`json:"id"`
 	Username 	string 	`json:"username"`
-	IsAdmin 	bool 	`json:"is_admin"`
+	Role 		string 	`json:"role"`
 }
 
 type UserRequest struct {
 	Username string `json:"username" validate:"required"`
 	Password string `json:"password" validate:"required,min=6"`
-	IsAdmin  bool   `json:"is_admin"`
 }
 
 type UserUpdateRequest struct {

@@ -12,6 +12,7 @@ type Config struct {
 	DSN    string
 	JWT_SECRET   string
 	SERVER_PORT string
+	REDIS_ADDR string
 }
 
 func LoadConfig(envPath string) (*Config, error) {
@@ -34,11 +35,16 @@ func LoadConfig(envPath string) (*Config, error) {
 	if jwtSecret == "" {
 		log.Printf("JWT_SECRET not set, using default: %s", jwtSecret)
 	}
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		log.Printf("REDIS_ADDR not set, using default: %s", redisAddr)
+	}
 
 	cfg := &Config{
 		DSN:    dbDSN,
 		JWT_SECRET:   jwtSecret,
 		SERVER_PORT: serverPort,
+		REDIS_ADDR: redisAddr,
 	}
 	return cfg, nil
 }
