@@ -32,7 +32,7 @@ func (r *UserRepo) GetUserByUsername(ctx context.Context, username string) (*mod
 	return &user, nil
 }
 
-func (r *UserRepo) GetUserByID(ctx context.Context, id int) (*model.User, error) {
+func (r *UserRepo) GetUserByID(ctx context.Context, id string) (*model.User, error) {
 	var user model.User
 	err := r.db.WithContext(ctx).Preload("Role").First(&user, id).Error
 	if err != nil {
@@ -45,7 +45,7 @@ func (r *UserRepo) UpdateUser(ctx context.Context, user *model.User) error {
 	return r.db.WithContext(ctx).Save(user).Error
 }
 
-func (r *UserRepo) DeleteUser(ctx context.Context, id int) error {
+func (r *UserRepo) DeleteUser(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Delete(&model.User{}, id).Error
 }
 

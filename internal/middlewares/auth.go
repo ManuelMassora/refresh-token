@@ -3,8 +3,10 @@ package middlewares
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"refresh-token/internal/auth"
+	"refresh-token/internal/infra/redis"
 )
 
 func Auth(jwtMarker *auth.JWTMarker) func(http.Handler) http.Handler {
@@ -21,6 +23,13 @@ func Auth(jwtMarker *auth.JWTMarker) func(http.Handler) http.Handler {
 
 			if err != nil {
 				renderError(w, "Invalid or expired token", http.StatusUnauthorized)
+				return
+			}
+
+			// Verify if token is in blacklist
+			isBlacklisted, err := redis.RedisClient.Exists(r.Context(), fmt.Sprintf("blacklist:token:%s", claim.RegisteredClaims.ID)).Result()
+			if err == nil && isBlacklisted > 0 {
+				renderError(w, "Token has been invalidated (blacklisted)", http.StatusUnauthorized)
 				return
 			}
 

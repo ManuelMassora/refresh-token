@@ -42,6 +42,7 @@ func autoMigrate(db *gorm.DB) error {
 		&model.Role{},
 		&model.User{},
 		&model.Item{},
+		&model.Device{},
 	)
 }
 

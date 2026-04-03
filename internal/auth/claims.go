@@ -15,13 +15,13 @@ const (
 )
 
 type UserClaims struct {
-	ID       int64  `json:"id"`
+	ID       string `json:"id"`
 	Username string `json:"username"`
 	Role  		string   `json:"role"`
 	jwt.RegisteredClaims
 }
 
-func NewUserClaims(id int64, username string, role string, duration time.Duration) (*UserClaims, error) {
+func NewUserClaims(id string, username string, role string, duration time.Duration) (*UserClaims, error) {
 	tokenID, err := uuid.NewRandom()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token ID: %w", err)

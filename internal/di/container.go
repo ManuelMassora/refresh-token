@@ -14,6 +14,7 @@ type Container struct {
 	UserRepo    *repo.UserRepo
 	ItemRepo    *repo.ItemRepo
 	SessionRepo *repo.SessionRepo
+	DeviceRepo  *repo.DeviceRepo
 
 	JWTMarker *auth.JWTMarker
 
@@ -28,10 +29,11 @@ func NewContainer(db *gorm.DB, cfg *config.Config) *Container {
 	userRepo := repo.NewUserRepo(db)
 	itemRepo := repo.NewItemRepo(db)
 	sessionRepo := repo.NewSessionRepo()
+	deviceRepo := repo.NewDeviceRepo(db)
 
 	jwtMarker := auth.NewJWTMarker(cfg.JWT_SECRET)
 
-	authHandler := handler.NewAuthHandler(userRepo, sessionRepo, jwtMarker, v)
+	authHandler := handler.NewAuthHandler(userRepo, sessionRepo, jwtMarker, v, deviceRepo)
 	itemHandler := handler.NewItemHandler(itemRepo, v)
 	userHandler := handler.NewUserHandler(userRepo, v)
 
@@ -39,6 +41,7 @@ func NewContainer(db *gorm.DB, cfg *config.Config) *Container {
 		UserRepo:    userRepo,
 		ItemRepo:    itemRepo,
 		SessionRepo: sessionRepo,
+		DeviceRepo:  deviceRepo,
 		JWTMarker:   jwtMarker,
 		AuthHandler: authHandler,
 		ItemHandler: itemHandler,

@@ -1,18 +1,25 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"refresh-token/internal/auth"
 	"refresh-token/internal/infra/redis"
 	"refresh-token/internal/model"
 	"refresh-token/internal/repo"
 	"refresh-token/internal/util"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
@@ -20,14 +27,20 @@ type AuthHandler struct {
 	repoSession *repo.SessionRepo
 	tokenMarker *auth.JWTMarker
 	validator   *validator.Validate
+	DeviceRepo  *repo.DeviceRepo
 }
 	
-func NewAuthHandler(repo *repo.UserRepo, repoSession *repo.SessionRepo, tokenMarker *auth.JWTMarker, v *validator.Validate) *AuthHandler {
+func NewAuthHandler(repo *repo.UserRepo,
+	repoSession *repo.SessionRepo,
+	tokenMarker *auth.JWTMarker,
+	v *validator.Validate,
+	deviceRepo *repo.DeviceRepo) *AuthHandler {
 	return &AuthHandler{
 		repo:        repo,
 		repoSession: repoSession,
 		tokenMarker: tokenMarker,
 		validator:   v,
+		DeviceRepo:  deviceRepo,
 	}
 }
 
@@ -53,32 +66,66 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	acessToken, accessClaims, err := h.tokenMarker.CreateToken(int64(user.ID), user.Username, user.Role.Name, 5 * time.Minute)
+	fingerprint := generateFingerprint(user.ID, r.UserAgent())
+    device, err := h.DeviceRepo.GetDeviceByFingerprint(r.Context(), fingerprint)
+    if errors.Is(err, gorm.ErrRecordNotFound) {
+        device = &model.Device{
+            ID:          uuid.New().String(),
+            UserID:      user.ID,
+            Fingerprint: fingerprint,
+            UserAgent:   r.UserAgent(),
+            IPAddress:   getRealIP(r),
+            LastSeen:    time.Now(),
+        }
+        if _, err := h.DeviceRepo.CreateDevice(r.Context(), device); err != nil {
+            http.Error(w, "Error registering device", http.StatusInternalServerError)
+            return
+        }
+    } else if err != nil {
+        http.Error(w, "Database error", http.StatusInternalServerError)
+        return
+    } else {
+        if err := h.DeviceRepo.UpdateLastSeen(r.Context(), device.ID); err != nil {
+            http.Error(w, "Database error", http.StatusInternalServerError)
+            return
+        }
+    }
+
+	// Invalidate previous session for this device
+	oldSessionID, err := redis.RedisClient.Get(r.Context(), "device:session:"+device.ID).Result()
+	if err == nil && oldSessionID != "" {
+		h.repoSession.DeleteSession(r.Context(), oldSessionID)
+	}
+
+	acessToken, accessClaims, err := h.tokenMarker.CreateToken(user.ID, user.Username, user.Role.Name, 5 * time.Minute)
 	if err != nil {
 		http.Error(w, "Error creating token", http.StatusInternalServerError)
 		return
 	}
 
-	refreshToken, refreshClaims, err := h.tokenMarker.CreateToken(int64(user.ID), user.Username, user.Role.Name,  7*24*time.Hour)
+	refreshToken, refreshClaims, err := h.tokenMarker.CreateToken(user.ID, user.Username, user.Role.Name,  7*24*time.Hour)
 	if err != nil {
 		http.Error(w, "Error creating refresh token", http.StatusInternalServerError)
 		return
 	}
 
 	session, err := h.repoSession.CreateSession(r.Context(), &model.Session{
-		SessionID: refreshClaims.RegisteredClaims.ID,
-		UserID: user.ID,
-		Username: refreshClaims.Username,
+		SessionID:    refreshClaims.RegisteredClaims.ID,
+		UserID:       user.ID,
+		Username:     refreshClaims.Username,
 		RefreshToken: refreshToken,
-		IsRevoked: false,
-		ExpiresAt: refreshClaims.RegisteredClaims.ExpiresAt.Time,
+		IsRevoked:    false,
+		DeviceID:     device.ID,
+		ExpiresAt:    refreshClaims.RegisteredClaims.ExpiresAt.Time,
 	})
 	if err != nil {
 		http.Error(w, "Error creating session", http.StatusInternalServerError)
 		return
 	}
 
-	err = redis.RedisClient.Set(r.Context(), fmt.Sprintf("user:role:%d", user.ID), user.Role.Name, 5*time.Minute).Err()
+	redis.RedisClient.Set(r.Context(), "device:session:"+device.ID, session.SessionID, 7*24*time.Hour)
+
+	err = redis.RedisClient.Set(r.Context(), fmt.Sprintf("user:role:%s", user.ID), user.Role.Name, 5*time.Minute).Err()
 	if err != nil {
 		http.Error(w, "Error storing user role in Redis", http.StatusInternalServerError)
 		return
@@ -90,7 +137,46 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func generateFingerprint(userId string, userAgent string) string {
+	data := fmt.Sprintf("%s:%s", userId, userAgent)
+	hash := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(hash[:])
+}
+
+func getRealIP(r *http.Request) string {
+    // Cloudflare
+    if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
+        return ip
+    }
+    // nginx / caddy padrão
+    if ip := r.Header.Get("X-Real-IP"); ip != "" {
+        return ip
+    }
+    // fallback encadeado (pega o primeiro IP da lista)
+    if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+        ip, _, _ := strings.Cut(forwarded, ",")
+        return strings.TrimSpace(ip)
+    }
+    // desenvolvimento local — remover porta
+    ip, _, err := net.SplitHostPort(r.RemoteAddr)
+    if err != nil {
+        return r.RemoteAddr
+    }
+    return ip
+}
+
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	accessTokenCookie, err := r.Cookie("access_token")
+	if err == nil {
+		claims, err := h.tokenMarker.VerifyToken(accessTokenCookie.Value)
+		if err == nil {
+			remainingTime := time.Until(claims.ExpiresAt.Time)
+			if remainingTime > 0 {
+				redis.RedisClient.Set(r.Context(), fmt.Sprintf("blacklist:token:%s", claims.RegisteredClaims.ID), "blacklisted", remainingTime)
+			}
+		}
+	}
+
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
 		http.Error(w, "Session ID is required", http.StatusBadRequest)
@@ -98,7 +184,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	id := cookie.Value
 
-	userID, ok := r.Context().Value(auth.UserIDKey).(int64)
+	userID, ok := r.Context().Value(auth.UserIDKey).(string)
 	if !ok {
 		http.Error(w, "User ID não encontrado no contexto", http.StatusUnauthorized)
 		return
@@ -110,7 +196,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if int64(session.UserID) != userID {
+	if session.UserID != userID {
 		http.Error(w, "Invalid session", http.StatusUnauthorized)
 		return
 	}
@@ -121,8 +207,11 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove role from Redis on logout
-	redis.RedisClient.Del(r.Context(), fmt.Sprintf("user:role:%d", userID))
+	if session.DeviceID != "" {
+		redis.RedisClient.Del(r.Context(), "device:session:"+session.DeviceID)
+	}
+
+	redis.RedisClient.Del(r.Context(), fmt.Sprintf("user:role:%s", userID))
 
 	h.clearTokenCookies(w)
 	w.WriteHeader(http.StatusNoContent)
@@ -209,7 +298,7 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if session.IsRevoked {
-		err = h.repoSession.RevokeAllSessionForUser(r.Context(), session.UserID)
+		err = h.repoSession.RevokeAllSessionsForUser(r.Context(), session.UserID)
 		if err != nil {
 			http.Error(w, "Error revoking session", http.StatusInternalServerError)
 			return
@@ -240,13 +329,14 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.repoSession.CreateSession(r.Context(), &model.Session{
+	newSession, err := h.repoSession.CreateSession(r.Context(), &model.Session{
 		SessionID:    newRefreshClaims.RegisteredClaims.ID,
 		UserID:       session.UserID,
 		Username:     newRefreshClaims.Username,
 		RefreshToken: newRefreshToken,
 		IsRevoked:    false,
 		ParentID:	  session.SessionID,
+		DeviceID:     session.DeviceID,
 		ExpiresAt:    newRefreshClaims.RegisteredClaims.ExpiresAt.Time,
 	})
 	if err != nil {
@@ -254,14 +344,17 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.repoSession.RevokeSession(r.Context(), session.SessionID)
+	if session.DeviceID != "" {
+		redis.RedisClient.Set(r.Context(), "device:session:"+session.DeviceID, newSession.SessionID, 7*24*time.Hour)
+	}
+
+	err = h.repoSession.DeleteSession(r.Context(), session.SessionID)
 	if err != nil {
 		http.Error(w, "Error revoking old session", http.StatusInternalServerError)
 		return
 	}
 
-	// Store role in Redis for role checks (refreshing TTL to 15 mins)
-	err = redis.RedisClient.Set(r.Context(), fmt.Sprintf("user:role:%d", refreshClaims.ID), refreshClaims.Role, 5*time.Minute).Err()
+	err = redis.RedisClient.Set(r.Context(), fmt.Sprintf("user:role:%s", refreshClaims.ID), refreshClaims.Role, 5*time.Minute).Err()
 	if err != nil {
 		http.Error(w, "Error updating user role in Redis", http.StatusInternalServerError)
 		return
@@ -279,7 +372,7 @@ func (h *AuthHandler) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.repoSession.RevokeSession(r.Context(), id)
+	err := h.repoSession.DeleteSession(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Error revoking session", http.StatusInternalServerError)
 		return

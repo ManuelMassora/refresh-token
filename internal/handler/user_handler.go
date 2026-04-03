@@ -6,10 +6,10 @@ import (
 	"refresh-token/internal/model"
 	"refresh-token/internal/repo"
 	"refresh-token/internal/util"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 )
 
 type UserHandler struct {
@@ -37,6 +37,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user model.User
+	user.ID = uuid.New().String()
 	user.Username = req.Username
 	hashedPassword, err := util.HashPassword(req.Password)
 	if err != nil {
@@ -63,12 +64,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	uid, err := strconv.ParseInt(id, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
-	}
-	user, err := h.repo.GetUserByID(r.Context(), int(uid))
+	user, err := h.repo.GetUserByID(r.Context(), id)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
@@ -85,12 +81,6 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	uid, err := strconv.ParseInt(id, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
-	}
-
 	var req UserUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -101,7 +91,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Validation failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	user, err := h.repo.GetUserByID(r.Context(), int(uid))
+	user, err := h.repo.GetUserByID(r.Context(), id)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
@@ -122,17 +112,12 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	uid, err := strconv.ParseInt(id, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
-	}
-	_, err = h.repo.GetUserByID(r.Context(), int(uid))
+	_, err := h.repo.GetUserByID(r.Context(), id)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
-	err = h.repo.DeleteUser(r.Context(), int(uid))
+	err = h.repo.DeleteUser(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Error deleting user", http.StatusInternalServerError)
 		return

@@ -10,12 +10,12 @@ import (
 func HasAnyRole(allowedRoles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			userID, ok := r.Context().Value(auth.UserIDKey).(int64)
+			userID, ok := r.Context().Value(auth.UserIDKey).(string)
 			if !ok {
 				renderError(w, "Erro interno de identificação", http.StatusInternalServerError)
 				return
 			}
-			actualRole, err := redis.RedisClient.Get(r.Context(), fmt.Sprintf("user:role:%d", userID)).Result()
+			actualRole, err := redis.RedisClient.Get(r.Context(), fmt.Sprintf("user:role:%s", userID)).Result()
 			if err != nil {
 				renderError(w, "Permissão não encontrada", http.StatusForbidden)
 				return
