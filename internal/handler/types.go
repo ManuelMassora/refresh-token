@@ -39,8 +39,16 @@ type UserRequest struct {
 	Password string `json:"password" validate:"required,min=6"`
 }
 
-type UserUpdateRequest struct {
+type UserUpdateNameRequest struct {
 	Username string `json:"username" validate:"required"`
+}
+
+type UserUpdatePasswordRequest struct {
+	Password string `json:"password" validate:"required,min=6"`
+}
+
+type UserUpdateRoleRequest struct {
+	RoleID int64 `json:"role_id" validate:"required"`
 }
 
 type ItemRequest struct {

@@ -27,12 +27,14 @@ func RegisterRoutes(container *di.Container) *chi.Mux {
 
 	r.Route("/users", func(r chi.Router) {
 		r.Post("/", container.UserHandler.CreateUser)
-		r.Use(middlewares.Auth(container.JWTMarker))
 		r.Group(func(r chi.Router) {
-			r.Use(middlewares.HasAnyRole("ADMIN"))
+			r.Use(middlewares.Auth(container.JWTMarker))
+			r.Use(middlewares.HasAnyRole(container.AuthHandler, "ADMIN"))
 			r.Get("/", container.UserHandler.GetAllUsers)
 			r.Get("/{id}", container.UserHandler.GetUser)
-			r.Put("/{id}", container.UserHandler.UpdateUser)
+			r.Put("/{id}/name", container.UserHandler.UpdateUserName)
+			r.Put("/{id}/password", container.UserHandler.UpdateUserPassword)
+			r.Put("/{id}/role", container.UserHandler.UpdateUserRole)
 			r.Delete("/{id}", container.UserHandler.DeleteUser)
 		})
 	})
@@ -40,7 +42,7 @@ func RegisterRoutes(container *di.Container) *chi.Mux {
 	r.Route("/items", func(r chi.Router) {
 		r.Use(middlewares.Auth(container.JWTMarker))
 		r.Group(func(r chi.Router) {
-			r.Use(middlewares.HasAnyRole("ADMIN"))
+			r.Use(middlewares.HasAnyRole(container.AuthHandler, "ADMIN"))
 			r.Post("/", container.ItemHandler.CreateItem)
 			r.Put("/{id}", container.ItemHandler.UpdateItem)
 			r.Delete("/{id}", container.ItemHandler.DeleteItem)

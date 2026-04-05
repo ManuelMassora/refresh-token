@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -30,8 +31,7 @@ func (marker *JWTMarker) CreateToken(id string, username string, role string, du
 
 func (marker *JWTMarker) VerifyToken(tokenString string) (*UserClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &UserClaims{}, func(token *jwt.Token) (interface{}, error) {
-		_, ok := token.Method.(*jwt.SigningMethodHMAC)
-		if !ok {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(marker.secretKey), nil
@@ -39,9 +39,9 @@ func (marker *JWTMarker) VerifyToken(tokenString string) (*UserClaims, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error parsing token: %w", err)
 	}
-	claims, ok := token.Claims.(*UserClaims)
-	if !ok {
-		return nil, fmt.Errorf("error extracting claims: %w", err)
+	if claims, ok := token.Claims.(*UserClaims); ok && token.Valid {
+		return claims, nil
 	}
-	return claims, nil
+
+	return nil, errors.New("invalid token")
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -277,6 +278,20 @@ func (h *AuthHandler) clearTokenCookies(w http.ResponseWriter) {
 	})
 }
 
+func (h *AuthHandler) GetOrFetchUserRole(ctx context.Context, userID string) (string, error) {
+    key := fmt.Sprintf("user:role:%s", userID)
+    role, err := redis.RedisClient.Get(ctx, key).Result()
+    if err == nil {
+        return role, nil
+    }
+    user, err := h.repo.GetUserByID(ctx, userID)
+    if err != nil {
+        return "", err
+    }
+    redis.RedisClient.Set(ctx, key, user.Role.Name, 1*time.Hour)
+    return user.Role.Name, nil
+}
+
 func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("refresh_token")
 	if err != nil {
@@ -290,6 +305,14 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid refresh token: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
+
+	lockKey := fmt.Sprintf("lock:renew:%s", refreshClaims.RegisteredClaims.ID)
+	locked, err := redis.RedisClient.SetNX(r.Context(), lockKey, "1", 5*time.Second).Result()
+	if err != nil || !locked {
+		http.Error(w, "Refresh already in progress or failed to acquire lock", http.StatusTooManyRequests)
+		return
+	}
+	defer redis.RedisClient.Del(r.Context(), lockKey)
 
 	session, err := h.repoSession.GetSessionByID(r.Context(), refreshClaims.RegisteredClaims.ID)
 	if err != nil {

@@ -78,10 +78,10 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+func (h *UserHandler) UpdateUserName(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	var req UserUpdateRequest
+	var req UserUpdateNameRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
@@ -91,15 +91,79 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Validation failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	user, err := h.repo.GetUserByID(r.Context(), id)
-	if err != nil {
-		http.Error(w, "User not found", http.StatusNotFound)
-		return
-	}
-	user.Username = req.Username
-	err = h.repo.UpdateUser(r.Context(), user)
+	err := h.repo.UpdateUserName(r.Context(), id, req.Username)
 	if err != nil {
 		http.Error(w, "Error updating user", http.StatusInternalServerError)
+		return
+	}
+	user, err := h.repo.GetUserByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, "User not found after update", http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(UserResponse{
+		ID: user.ID,
+		Username: user.Username,
+		Role: user.Role.Name,
+	})
+}
+
+func (h *UserHandler) UpdateUserPassword(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req UserUpdatePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.validator.Struct(req); err != nil {
+		http.Error(w, "Validation failed: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	hashedPassword, err := util.HashPassword(req.Password)
+	if err != nil {
+		http.Error(w, "Error hashing password", http.StatusInternalServerError)
+		return
+	}
+	err = h.repo.UpdateUserPassword(r.Context(), id, hashedPassword)
+	if err != nil {
+		http.Error(w, "Error updating user", http.StatusInternalServerError)
+		return
+	}
+	user, err := h.repo.GetUserByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, "User not found after update", http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(UserResponse{
+		ID: user.ID,
+		Username: user.Username,
+		Role: user.Role.Name,
+	})
+}
+
+func (h *UserHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req UserUpdateRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.validator.Struct(req); err != nil {
+		http.Error(w, "Validation failed: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	err := h.repo.UpdateUserRole(r.Context(), id, req.RoleID)
+	if err != nil {
+		http.Error(w, "Error updating user: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	user, err := h.repo.GetUserByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, "User not found after update", http.StatusNotFound)
 		return
 	}
 	json.NewEncoder(w).Encode(UserResponse{
