@@ -17,6 +17,8 @@ func NewDeviceRepo(db *gorm.DB) *DeviceRepo {
 }
 
 func (r *DeviceRepo) CreateDevice(ctx context.Context, device *model.Device) (*model.Device, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	err := r.db.WithContext(ctx).Create(device).Error
 	if err != nil {
 		return nil, err
@@ -25,6 +27,8 @@ func (r *DeviceRepo) CreateDevice(ctx context.Context, device *model.Device) (*m
 }
 
 func (r *DeviceRepo) GetDeviceByID(ctx context.Context, id string) (*model.Device, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	var device model.Device
 	err := r.db.WithContext(ctx).First(&device, "id = ?", id).Error
 	if err != nil {
@@ -34,6 +38,8 @@ func (r *DeviceRepo) GetDeviceByID(ctx context.Context, id string) (*model.Devic
 }
 
 func (r *DeviceRepo) GetDeviceByFingerprint(ctx context.Context, fingerprint string) (*model.Device, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	var device model.Device
 	err := r.db.WithContext(ctx).First(&device, "fingerprint = ?", fingerprint).Error
 	if err != nil {
@@ -43,18 +49,26 @@ func (r *DeviceRepo) GetDeviceByFingerprint(ctx context.Context, fingerprint str
 }
 
 func (r *DeviceRepo) UpdateDevice(ctx context.Context, device *model.Device) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	return r.db.WithContext(ctx).Save(device).Error
 }
 
 func (r *DeviceRepo) UpdateLastSeen(ctx context.Context, id string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	return r.db.WithContext(ctx).Model(&model.Device{}).Where("id = ?", id).Update("last_seen", time.Now()).Error
 }
 
 func (r *DeviceRepo) DeleteDevice(ctx context.Context, id string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	return r.db.WithContext(ctx).Delete(&model.Device{}, "id = ?", id).Error
 }
 
 func (r *DeviceRepo) GetAllDevices(ctx context.Context) ([]model.Device, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	var devices []model.Device
 	err := r.db.WithContext(ctx).Find(&devices).Error
 	if err != nil {

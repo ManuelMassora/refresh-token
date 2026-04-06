@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"refresh-token/internal/auth"
 	"refresh-token/internal/infra/redis"
@@ -26,10 +27,14 @@ func Auth(jwtMarker *auth.JWTMarker) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Verify if token is in blacklist
 			isBlacklisted, err := redis.RedisClient.Exists(r.Context(), fmt.Sprintf("blacklist:token:%s", claim.RegisteredClaims.ID)).Result()
-			if err == nil && isBlacklisted > 0 {
-				renderError(w, "Token has been invalidated (blacklisted)", http.StatusUnauthorized)
+			if err != nil {
+				log.Printf("redis unavailable during blacklist check: %v", err)
+				renderError(w, "service temporarily unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if isBlacklisted > 0 {
+				renderError(w, "token has been invalidated", http.StatusUnauthorized)
 				return
 			}
 

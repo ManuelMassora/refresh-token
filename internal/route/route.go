@@ -18,7 +18,14 @@ func RegisterRoutes(container *di.Container) *chi.Mux {
 	r.Use(middleware.Timeout(3 *time.Second))
 	r.Use(httprate.LimitByIP(10, time.Minute))
 
-	r.Post("/login", container.AuthHandler.Login)
+	r.Route("/auth", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(middlewares.RateLimitMiddleware)
+			r.Post("/login", container.AuthHandler.Login)
+			r.Post("/renew", container.AuthHandler.RenewAccessToken)
+			r.Post("/revoke/{id}", container.AuthHandler.RevokeSession)
+		})
+	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(middlewares.Auth(container.JWTMarker))
@@ -49,15 +56,6 @@ func RegisterRoutes(container *di.Container) *chi.Mux {
 		})
 		r.Get("/", container.ItemHandler.GetAllItems)
 		r.Get("/{id}", container.ItemHandler.GetItem)
-	})
-
-	r.Route("/tokens", func(r chi.Router) {
-		r.Route("/renew", func(r chi.Router) {
-			r.Post("/", container.AuthHandler.RenewAccessToken)
-		})
-		r.Route("/revoke/{id}", func(r chi.Router) {
-			r.Post("/", container.AuthHandler.RevokeSession)
-		})
 	})
 
 	return r

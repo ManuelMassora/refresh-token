@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"refresh-token/internal/auth"
@@ -53,8 +54,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.validator.Struct(req); err != nil {
-		http.Error(w, "Validation failed: "+err.Error(), http.StatusBadRequest)
-		return
+    	log.Printf("validation error: %v", err) // log interno detalhado
+    	http.Error(w, "invalid request", http.StatusBadRequest) // resposta genérica
 	}
 
 	user, err := h.repo.GetUserByUsername(r.Context(), req.Username)
@@ -67,7 +68,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fingerprint := generateFingerprint(user.ID, r.UserAgent())
+	fingerprint := generateFingerprint(r, user.ID)
     device, err := h.DeviceRepo.GetDeviceByFingerprint(r.Context(), fingerprint)
     if errors.Is(err, gorm.ErrRecordNotFound) {
         device = &model.Device{
@@ -114,7 +115,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		SessionID:    refreshClaims.RegisteredClaims.ID,
 		UserID:       user.ID,
 		Username:     refreshClaims.Username,
-		RefreshToken: refreshToken,
+		RefreshToken: util.HashToken(refreshToken),
 		IsRevoked:    false,
 		DeviceID:     device.ID,
 		ExpiresAt:    refreshClaims.RegisteredClaims.ExpiresAt.Time,
@@ -138,32 +139,47 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func generateFingerprint(userId string, userAgent string) string {
-	data := fmt.Sprintf("%s:%s", userId, userAgent)
-	hash := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(hash[:])
+func generateFingerprint(r *http.Request, userId string) string {
+    data := fmt.Sprintf("%s|%s|%s|%s",
+        userId,
+        r.UserAgent(),
+        r.Header.Get("Accept-Language"),
+        r.Header.Get("Accept-Encoding"),
+    )
+    sum := sha256.Sum256([]byte(data))
+    return hex.EncodeToString(sum[:])
 }
 
+var trustedProxies = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+
 func getRealIP(r *http.Request) string {
-    // Cloudflare
-    if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
-        return ip
+    remoteIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+    if isTrustedProxy(remoteIP, trustedProxies) {
+        if ip := r.Header.Get("CF-Connecting-IP"); ip != "" { return ip }
+        if ip := r.Header.Get("X-Real-IP"); ip != "" { return ip }
+        if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+            ip, _, _ := strings.Cut(fwd, ",")
+            return strings.TrimSpace(ip)
+        }
     }
-    // nginx / caddy padrão
-    if ip := r.Header.Get("X-Real-IP"); ip != "" {
-        return ip
-    }
-    // fallback encadeado (pega o primeiro IP da lista)
-    if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-        ip, _, _ := strings.Cut(forwarded, ",")
-        return strings.TrimSpace(ip)
-    }
-    // desenvolvimento local — remover porta
-    ip, _, err := net.SplitHostPort(r.RemoteAddr)
-    if err != nil {
-        return r.RemoteAddr
-    }
-    return ip
+    return remoteIP
+}
+
+func isTrustedProxy(remoteIP string, trustedProxies []string) bool {
+	ip := net.ParseIP(remoteIP)
+	if ip == nil {
+		return false
+	}
+	for _, cidr := range trustedProxies {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -226,7 +242,7 @@ func (h *AuthHandler) setTokenCookies(w http.ResponseWriter, sessionID, accessTo
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
@@ -235,7 +251,7 @@ func (h *AuthHandler) setTokenCookies(w http.ResponseWriter, sessionID, accessTo
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refresh_token",
@@ -244,7 +260,7 @@ func (h *AuthHandler) setTokenCookies(w http.ResponseWriter, sessionID, accessTo
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 
@@ -335,9 +351,17 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if session.RefreshToken != refreshToken {
+	if session.RefreshToken != util.HashToken(refreshToken) {
 		http.Error(w, "Mismatched refresh token", http.StatusUnauthorized)
 		return
+	}
+
+	if session.ParentID != "" {
+		if _, err := h.repoSession.GetSessionByID(r.Context(), session.ParentID); err == nil {
+			h.repoSession.RevokeAllSessionsForUser(r.Context(), session.UserID)
+			http.Error(w, "Potential token reuse detected, all sessions revoked", http.StatusUnauthorized)
+			return
+		}
 	}
 
 	accessToken, accessClaims, err := h.tokenMarker.CreateToken(refreshClaims.ID, refreshClaims.Username, refreshClaims.Role, 5*time.Minute)
@@ -352,28 +376,20 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newSession, err := h.repoSession.CreateSession(r.Context(), &model.Session{
+	newSession := &model.Session{
 		SessionID:    newRefreshClaims.RegisteredClaims.ID,
 		UserID:       session.UserID,
 		Username:     newRefreshClaims.Username,
-		RefreshToken: newRefreshToken,
+		RefreshToken: util.HashToken(newRefreshToken),
 		IsRevoked:    false,
 		ParentID:	  session.SessionID,
 		DeviceID:     session.DeviceID,
 		ExpiresAt:    newRefreshClaims.RegisteredClaims.ExpiresAt.Time,
-	})
-	if err != nil {
-		http.Error(w, "Error creating new session", http.StatusInternalServerError)
-		return
 	}
 
-	if session.DeviceID != "" {
-		redis.RedisClient.Set(r.Context(), "device:session:"+session.DeviceID, newSession.SessionID, 7*24*time.Hour)
-	}
-
-	err = h.repoSession.DeleteSession(r.Context(), session.SessionID)
+	err = h.repoSession.ReplaceSession(r.Context(), session.SessionID, newSession)
 	if err != nil {
-		http.Error(w, "Error revoking old session", http.StatusInternalServerError)
+		http.Error(w, "Error rotating session", http.StatusInternalServerError)
 		return
 	}
 
@@ -389,17 +405,21 @@ func (h *AuthHandler) RenewAccessToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) RevokeSession(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
-		http.Error(w, "Session ID is required", http.StatusBadRequest)
-		return
-	}
-
-	err := h.repoSession.DeleteSession(r.Context(), id)
-	if err != nil {
-		http.Error(w, "Error revoking session", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+    id := chi.URLParam(r, "id")
+    userID, ok := r.Context().Value(auth.UserIDKey).(string)
+    if !ok {
+        http.Error(w, "unauthorized", http.StatusUnauthorized)
+        return
+    }
+    session, err := h.repoSession.GetSessionByID(r.Context(), id)
+    if err != nil {
+        http.Error(w, "session not found", http.StatusNotFound)
+        return
+    }
+    if session.UserID != userID {
+        http.Error(w, "forbidden", http.StatusForbidden)
+        return
+    }
+    h.repoSession.DeleteSession(r.Context(), id)
+    w.WriteHeader(http.StatusNoContent)
 }

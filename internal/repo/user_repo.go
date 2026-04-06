@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"refresh-token/internal/infra/redis"
 	"refresh-token/internal/model"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -18,6 +19,9 @@ func NewUserRepo(db *gorm.DB) *UserRepo {
 }
 
 func (r *UserRepo) CreateUser(ctx context.Context, user *model.User) (*model.User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	
 	err := r.db.WithContext(ctx).Preload("Role").Create(user).Error
 	if err != nil {
 		return nil, err
@@ -26,6 +30,8 @@ func (r *UserRepo) CreateUser(ctx context.Context, user *model.User) (*model.Use
 }
 
 func (r *UserRepo) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	var user model.User
 	err := r.db.WithContext(ctx).Preload("Role").Where("username = ?", username).First(&user).Error
 	if err != nil {
@@ -35,6 +41,8 @@ func (r *UserRepo) GetUserByUsername(ctx context.Context, username string) (*mod
 }
 
 func (r *UserRepo) GetUserByID(ctx context.Context, id string) (*model.User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	var user model.User
 	err := r.db.WithContext(ctx).Preload("Role").Where("id = ?", id).First(&user).Error
 	if err != nil {
@@ -44,14 +52,20 @@ func (r *UserRepo) GetUserByID(ctx context.Context, id string) (*model.User, err
 }
 
 func (r *UserRepo) UpdateUserName(ctx context.Context, id string, username string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Update("username", username).Error
 }
 
 func (r *UserRepo) UpdateUserPassword(ctx context.Context, id string, password string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Update("password", password).Error
 }
 
 func (r *UserRepo) UpdateUserRole(ctx context.Context, id string, roleID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	err := r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Update("role_id", roleID).Error
 	if err == nil {
 		key := fmt.Sprintf("user:role:%s", id)
@@ -61,10 +75,14 @@ func (r *UserRepo) UpdateUserRole(ctx context.Context, id string, roleID int64) 
 }
 
 func (r *UserRepo) DeleteUser(ctx context.Context, id string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.User{}).Error
 }
 
 func (r *UserRepo) GetAllUsers(ctx context.Context) ([]model.User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	var users []model.User
 	err := r.db.WithContext(ctx).Preload("Role").Find(&users).Error
 	if err != nil {
